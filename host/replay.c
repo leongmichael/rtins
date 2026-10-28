@@ -22,8 +22,8 @@ static int encode_demo_frames(uint8_t *imu_frame, size_t imu_cap, size_t *imu_n,
     imu.t_us = 1000;
     imu.acc_mps2[0] = 0.0f;
     imu.acc_mps2[1] = 0.0f;
-    imu.acc_mps2[2] = 9.81f;
-    imu.gyr_rads[0] = 0.01f;
+    imu.acc_mps2[2] = -9.80665f; /* NED body-z-down, still */
+    imu.gyr_rads[0] = 0.0f;
     imu.gyr_rads[1] = 0.0f;
     imu.gyr_rads[2] = 0.0f;
     ins_imu_pack(&imu, imu_pl);

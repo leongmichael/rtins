@@ -19,8 +19,8 @@ typedef uint32_t ins_time_t;
 
 typedef struct {
     ins_time_t t_us;
-    float acc_mps2[3];
-    float gyr_rads[3];
+    float acc_mps2[3]; /* specific force, body: x fwd, y right, z down */
+    float gyr_rads[3]; /* rad/s, body */
 } ins_imu_t;
 
 typedef struct {

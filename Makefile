@@ -5,13 +5,17 @@ CPUFLAGS := -mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16
 FW_CFLAGS := $(CPUFLAGS) -ffreestanding -nostdlib -O2 -Wall -Wextra \
              -I common/include -I firmware
 HOST_CFLAGS := -O2 -Wall -Wextra -I common/include
+HOST_LDLIBS := -lm
+
+COMMON_SRCS := common/src/ins_packet.c common/src/ins_math.c \
+               common/src/ins_mech.c
 
 FW_SRCS := firmware/startup.c firmware/main.c firmware/uart.c \
-           common/src/ins_packet.c
+           $(COMMON_SRCS)
 
-.PHONY: all firmware host clean qemu qemu-tcp replay-local
+.PHONY: all firmware host clean qemu qemu-tcp replay-local test-mech
 
-all: firmware host
+all: firmware host test-mech
 
 build:
 	mkdir -p build
@@ -22,13 +26,19 @@ build/firmware.elf: $(FW_SRCS) firmware/linker.ld | build
 	$(CC_FW) $(FW_CFLAGS) -T firmware/linker.ld -Wl,-Map=build/firmware.map \
 	  -o $@ $(FW_SRCS)
 
-host: build/replay
+host: build/replay build/test_mech
 
 build/replay: host/replay.c common/src/ins_packet.c | build
 	$(CC) $(HOST_CFLAGS) -o $@ host/replay.c common/src/ins_packet.c
 
+build/test_mech: host/test_mech.c $(COMMON_SRCS) | build
+	$(CC) $(HOST_CFLAGS) -o $@ host/test_mech.c $(COMMON_SRCS) $(HOST_LDLIBS)
+
 replay-local: build/replay
 	./build/replay
+
+test-mech: build/test_mech
+	./build/test_mech
 
 # -nographic already muxes the monitor onto stdio, so -serial stdio
 # fails with "cannot use stdio by multiple character devices".
