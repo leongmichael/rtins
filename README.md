@@ -1,8 +1,6 @@
 # rtins
 
-Bare-metal **strapdown INS** with a loosely coupled **15-state error-state EKF**, written in C for ARM Cortex-M4F. v1 runs in **QEMU** (`mps2-an386`) with a host program injecting IMU and GNSS over UART. There is no physical board yet.
-
-Aided sensors in v1: **6-DoF IMU + GNSS position**. No magnetometer, barometer, or GNSS velocity.
+Real-time inertial navigation system: a QEMU (`mps2-an386`) emulator of a bare-metal strapdown INS with a loosely coupled 15-state error-state EKF, in C, on ARM Cortex-M4F, with a host process that injects 6-DoF IMU and GNSS position over UART and logs nav. 
 
 ## Layout
 
@@ -81,8 +79,8 @@ IMU specific force is **body**, x forward, y right, **z down**. Level and still:
 - EKF state: `ψ(3), δv(3), δp(3), b_g(3), b_a(3)`
 - GNSS update: **position only**. `fix == 0` is ignored
 
-Q/R in `common/include/ins_ekf.h` is frozen for emulator still+GNSS, not a flight-tuned set.
+Q/R in `common/include/ins_ekf.h` is frozen for still IMU + 1 Hz GNSS in QEMU.
 
 ## Target
 
-QEMU MPS2 AN386, Cortex-M4F, hard-float (`-mfloat-abi=hard -mfpu=fpv4-sp-d16`). Firmware is freestanding (`-nostdlib`). The FPU is enabled in `Reset_Handler` (CPACR).
+The target is QEMU MPS2 AN386 (Cortex-M4F, hard-float: `-mfloat-abi=hard -mfpu=fpv4-sp-d16`). Firmware is freestanding (`-nostdlib`). The FPU is enabled in `Reset_Handler` (CPACR).
