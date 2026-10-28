@@ -31,4 +31,11 @@ typedef struct {
     uint8_t fix; /* 0 = invalid, non-zero = valid */
 } ins_gnss_t;
 
+typedef struct {
+    ins_time_t t_us;
+    float q_nb[4];
+    float v_ned[3];
+    float p_ned[3];
+} ins_nav_t;
+
 #endif /* INS_TYPES_H */

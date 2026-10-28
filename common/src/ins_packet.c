@@ -232,3 +232,35 @@ ins_status_t ins_gnss_unpack(const uint8_t *payload, uint8_t len, ins_gnss_t *ou
     out->fix = payload[16];
     return INS_OK;
 }
+
+void ins_nav_pack(const ins_nav_t *in, uint8_t payload[INS_PKT_NAV_LEN])
+{
+    int i;
+
+    wr_u32le(&payload[0], in->t_us);
+    for (i = 0; i < 4; i++) {
+        wr_f32le(&payload[4 + (i * 4)], in->q_nb[i]);
+    }
+    for (i = 0; i < 3; i++) {
+        wr_f32le(&payload[20 + (i * 4)], in->v_ned[i]);
+        wr_f32le(&payload[32 + (i * 4)], in->p_ned[i]);
+    }
+}
+
+ins_status_t ins_nav_unpack(const uint8_t *payload, uint8_t len, ins_nav_t *out)
+{
+    int i;
+
+    if (payload == NULL || out == NULL || len != INS_PKT_NAV_LEN) {
+        return INS_ERR_INVALID;
+    }
+    out->t_us = rd_u32le(&payload[0]);
+    for (i = 0; i < 4; i++) {
+        out->q_nb[i] = rd_f32le(&payload[4 + (i * 4)]);
+    }
+    for (i = 0; i < 3; i++) {
+        out->v_ned[i] = rd_f32le(&payload[20 + (i * 4)]);
+        out->p_ned[i] = rd_f32le(&payload[32 + (i * 4)]);
+    }
+    return INS_OK;
+}

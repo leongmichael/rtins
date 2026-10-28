@@ -1,8 +1,9 @@
 #ifndef FIRMWARE_UART_H
 #define FIRMWARE_UART_H
 
-#include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 
 /*
  * CMSDK APB UART0 on MPS2 AN386.
@@ -41,6 +42,7 @@ typedef struct {
 
 void uart_init(void);
 void uart_putc(uint8_t c);
+void uart_write(const uint8_t *buf, size_t n);
 
 /* Returns true and writes *out if a byte is waiting. */
 bool uart_try_getc(uint8_t *out);

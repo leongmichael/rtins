@@ -18,16 +18,21 @@
  *
  * type 0x02 GNSS payload 17 bytes:
  *   u32 t_us, f32 lat lon (deg), f32 alt (m), u8 fix
+ *
+ * type 0x81 NAV  payload 44 bytes (MCU → host):
+ *   u32 t_us, f32 q_nb[4], f32 v_ned[3], f32 p_ned[3]
  */
 
 #define INS_PKT_SYNC0      0xA5u
 #define INS_PKT_SYNC1      0x5Au
 #define INS_PKT_TYPE_IMU   0x01u
 #define INS_PKT_TYPE_GNSS  0x02u
+#define INS_PKT_TYPE_NAV   0x81u
 #define INS_PKT_MAX_PAYLOAD 64u
 
 #define INS_PKT_IMU_LEN  28u
 #define INS_PKT_GNSS_LEN 17u
+#define INS_PKT_NAV_LEN  44u
 
 typedef enum {
     INS_PACKET_NEED_MORE = 0,
@@ -54,5 +59,8 @@ void ins_gnss_pack(const ins_gnss_t *in, uint8_t payload[INS_PKT_GNSS_LEN]);
 
 ins_status_t ins_imu_unpack(const uint8_t *payload, uint8_t len, ins_imu_t *out);
 ins_status_t ins_gnss_unpack(const uint8_t *payload, uint8_t len, ins_gnss_t *out);
+
+void ins_nav_pack(const ins_nav_t *in, uint8_t payload[INS_PKT_NAV_LEN]);
+ins_status_t ins_nav_unpack(const uint8_t *payload, uint8_t len, ins_nav_t *out);
 
 #endif /* INS_PACKET_H */

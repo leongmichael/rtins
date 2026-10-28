@@ -1,4 +1,5 @@
 #include <arpa/inet.h>
+#include <math.h>
 #include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,96 +11,113 @@
 
 #include "ins_packet.h"
 
-static int encode_demo_frames(uint8_t *imu_frame, size_t imu_cap, size_t *imu_n,
-                              uint8_t *gnss_frame, size_t gnss_cap, size_t *gnss_n)
+#define LAT0 37.4275f
+#define LON0 (-122.1697f)
+#define ALT0 30.0f
+#define RE_M 6378137.0f
+#define IMU_HZ 100u
+#define STREAM_N 301u /* 3 s including t=0 */
+
+static void still_imu(ins_imu_t *imu, ins_time_t t_us)
+{
+    memset(imu, 0, sizeof(*imu));
+    imu->t_us = t_us;
+    imu->acc_mps2[2] = -9.80665f;
+}
+
+static int encode_imu(const ins_imu_t *imu, uint8_t *frame, size_t cap, size_t *n)
+{
+    uint8_t pl[INS_PKT_IMU_LEN];
+
+    ins_imu_pack(imu, pl);
+    *n = ins_packet_encode(INS_PKT_TYPE_IMU, pl, INS_PKT_IMU_LEN, frame, cap);
+    return (*n == 0u) ? -1 : 0;
+}
+
+static int encode_gnss(const ins_gnss_t *gnss, uint8_t *frame, size_t cap, size_t *n)
+{
+    uint8_t pl[INS_PKT_GNSS_LEN];
+
+    ins_gnss_pack(gnss, pl);
+    *n = ins_packet_encode(INS_PKT_TYPE_GNSS, pl, INS_PKT_GNSS_LEN, frame, cap);
+    return (*n == 0u) ? -1 : 0;
+}
+
+static int local_self_test(void)
 {
     ins_imu_t imu;
     ins_gnss_t gnss;
-    uint8_t imu_pl[INS_PKT_IMU_LEN];
-    uint8_t gnss_pl[INS_PKT_GNSS_LEN];
+    ins_nav_t nav, nav_out;
+    uint8_t frame[64];
+    uint8_t pl[INS_PKT_NAV_LEN];
+    size_t n, i;
+    int ready;
 
-    memset(&imu, 0, sizeof(imu));
-    imu.t_us = 1000;
-    imu.acc_mps2[0] = 0.0f;
-    imu.acc_mps2[1] = 0.0f;
-    imu.acc_mps2[2] = -9.80665f; /* NED body-z-down, still */
-    imu.gyr_rads[0] = 0.0f;
-    imu.gyr_rads[1] = 0.0f;
-    imu.gyr_rads[2] = 0.0f;
-    ins_imu_pack(&imu, imu_pl);
-    *imu_n = ins_packet_encode(INS_PKT_TYPE_IMU, imu_pl, INS_PKT_IMU_LEN,
-                               imu_frame, imu_cap);
+    still_imu(&imu, 1000);
+    if (encode_imu(&imu, frame, sizeof(frame), &n) != 0) {
+        return -1;
+    }
+    ins_packet_reset();
+    ready = 0;
+    for (i = 0; i < n; i++) {
+        if (ins_packet_feed(frame[i]) == INS_PACKET_FRAME_READY) {
+            ready++;
+        }
+    }
+    if (ready != 1 || ins_imu_unpack(ins_packet_payload(), ins_packet_len(),
+                                     &imu) != INS_OK) {
+        fprintf(stderr, "local: IMU failed\n");
+        return -1;
+    }
+    printf("local IMU t=%u az=%.2f\n", (unsigned)imu.t_us,
+           (double)imu.acc_mps2[2]);
 
     memset(&gnss, 0, sizeof(gnss));
     gnss.t_us = 1000;
-    gnss.lat_deg = 37.4275f;
-    gnss.lon_deg = -122.1697f;
-    gnss.alt_m = 30.0f;
+    gnss.lat_deg = LAT0;
+    gnss.lon_deg = LON0;
+    gnss.alt_m = ALT0;
     gnss.fix = 1;
-    ins_gnss_pack(&gnss, gnss_pl);
-    *gnss_n = ins_packet_encode(INS_PKT_TYPE_GNSS, gnss_pl, INS_PKT_GNSS_LEN,
-                                gnss_frame, gnss_cap);
-
-    if (*imu_n == 0u || *gnss_n == 0u) {
+    if (encode_gnss(&gnss, frame, sizeof(frame), &n) != 0) {
         return -1;
     }
-    return 0;
-}
-
-static int local_self_test(const uint8_t *imu_frame, size_t imu_n,
-                           const uint8_t *gnss_frame, size_t gnss_n)
-{
-    size_t i;
-    ins_packet_result_t r;
-    ins_imu_t imu;
-    ins_gnss_t gnss;
-    int ready;
-
     ins_packet_reset();
     ready = 0;
-    for (i = 0; i < imu_n; i++) {
-        r = ins_packet_feed(imu_frame[i]);
-        if (r == INS_PACKET_BAD) {
-            fprintf(stderr, "local: IMU frame rejected\n");
-            return -1;
-        }
-        if (r == INS_PACKET_FRAME_READY) {
+    for (i = 0; i < n; i++) {
+        if (ins_packet_feed(frame[i]) == INS_PACKET_FRAME_READY) {
             ready++;
         }
     }
-    if (ready != 1 || ins_packet_type() != INS_PKT_TYPE_IMU) {
-        fprintf(stderr, "local: expected one IMU frame\n");
+    if (ready != 1 || ins_gnss_unpack(ins_packet_payload(), ins_packet_len(),
+                                      &gnss) != INS_OK) {
+        fprintf(stderr, "local: GNSS failed\n");
         return -1;
     }
-    if (ins_imu_unpack(ins_packet_payload(), ins_packet_len(), &imu) != INS_OK) {
-        fprintf(stderr, "local: IMU unpack failed\n");
-        return -1;
-    }
-    printf("local IMU t=%u az=%.2f gx=%.3f\n",
-           (unsigned)imu.t_us, (double)imu.acc_mps2[2], (double)imu.gyr_rads[0]);
+    printf("local GNSS lat=%.4f fix=%u\n", (double)gnss.lat_deg,
+           (unsigned)gnss.fix);
 
+    memset(&nav, 0, sizeof(nav));
+    nav.t_us = 2000;
+    nav.q_nb[0] = 1.0f;
+    nav.p_ned[0] = 1.25f;
+    ins_nav_pack(&nav, pl);
+    n = ins_packet_encode(INS_PKT_TYPE_NAV, pl, INS_PKT_NAV_LEN, frame,
+                          sizeof(frame));
     ins_packet_reset();
     ready = 0;
-    for (i = 0; i < gnss_n; i++) {
-        r = ins_packet_feed(gnss_frame[i]);
-        if (r == INS_PACKET_BAD) {
-            fprintf(stderr, "local: GNSS frame rejected\n");
-            return -1;
-        }
-        if (r == INS_PACKET_FRAME_READY) {
+    for (i = 0; i < n; i++) {
+        if (ins_packet_feed(frame[i]) == INS_PACKET_FRAME_READY) {
             ready++;
         }
     }
-    if (ready != 1 || ins_packet_type() != INS_PKT_TYPE_GNSS) {
-        fprintf(stderr, "local: expected one GNSS frame\n");
+    if (ready != 1 || ins_packet_type() != INS_PKT_TYPE_NAV ||
+        ins_nav_unpack(ins_packet_payload(), ins_packet_len(), &nav_out)
+            != INS_OK ||
+        fabsf(nav_out.p_ned[0] - 1.25f) > 1.0e-5f) {
+        fprintf(stderr, "local: NAV failed\n");
         return -1;
     }
-    if (ins_gnss_unpack(ins_packet_payload(), ins_packet_len(), &gnss) != INS_OK) {
-        fprintf(stderr, "local: GNSS unpack failed\n");
-        return -1;
-    }
-    printf("local GNSS lat=%.4f lon=%.4f fix=%u\n",
-           (double)gnss.lat_deg, (double)gnss.lon_deg, (unsigned)gnss.fix);
+    printf("local NAV p_n=%.2f\n", (double)nav_out.p_ned[0]);
     return 0;
 }
 
@@ -117,14 +135,52 @@ static int send_all(int fd, const uint8_t *buf, size_t n)
     return 0;
 }
 
-static int tcp_send(const char *host, uint16_t port,
-                    const uint8_t *imu_frame, size_t imu_n,
-                    const uint8_t *gnss_frame, size_t gnss_n)
+static int wait_nav(int fd, ins_nav_t *nav, int timeout_ms)
+{
+    uint8_t b;
+    int elapsed = 0;
+
+    while (elapsed < timeout_ms) {
+        fd_set rfds;
+        struct timeval tv;
+        ssize_t r;
+
+        FD_ZERO(&rfds);
+        FD_SET(fd, &rfds);
+        tv.tv_sec = 0;
+        tv.tv_usec = 20000;
+        if (select(fd + 1, &rfds, NULL, NULL, &tv) <= 0) {
+            elapsed += 20;
+            continue;
+        }
+        r = read(fd, &b, 1);
+        if (r <= 0) {
+            return -1;
+        }
+        if (ins_packet_feed(b) == INS_PACKET_FRAME_READY &&
+            ins_packet_type() == INS_PKT_TYPE_NAV) {
+            return ins_nav_unpack(ins_packet_payload(), ins_packet_len(), nav)
+                           == INS_OK
+                       ? 0
+                       : -1;
+        }
+        elapsed = 0;
+    }
+    return -1;
+}
+
+static int tcp_stream(const char *host, uint16_t port)
 {
     int fd;
     struct sockaddr_in addr;
-    char reply[8];
-    ssize_t n;
+    ins_imu_t imu;
+    ins_gnss_t gnss;
+    ins_nav_t nav;
+    uint8_t frame[64];
+    size_t n;
+    unsigned i;
+    float lat_pull;
+    ins_nav_t last;
 
     fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) {
@@ -140,64 +196,64 @@ static int tcp_send(const char *host, uint16_t port,
         close(fd);
         return -1;
     }
-
     if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
         perror("connect");
         close(fd);
         return -1;
     }
 
-    if (send_all(fd, imu_frame, imu_n) != 0 ||
-        send_all(fd, gnss_frame, gnss_n) != 0) {
-        perror("write");
-        close(fd);
-        return -1;
-    }
+    ins_packet_reset();
+    memset(&last, 0, sizeof(last));
+    lat_pull = LAT0 + (float)((10.0 / (double)RE_M) * (180.0 / (double)M_PI));
 
-    /* Firmware ACKs IMU with 'I' and GNSS with 'G'. The boot 'A' may
-     * already have been dropped if we connected after reset. */
-    {
-        size_t got = 0;
-        int waits;
+    printf("# t_us p_n p_e p_d\n");
 
-        for (waits = 0; waits < 20 && got < sizeof(reply); waits++) {
-            fd_set rfds;
-            struct timeval tv;
-            ssize_t r;
-
-            FD_ZERO(&rfds);
-            FD_SET(fd, &rfds);
-            tv.tv_sec = 0;
-            tv.tv_usec = 50000;
-            if (select(fd + 1, &rfds, NULL, NULL, &tv) <= 0) {
-                if (got > 0) {
-                    break;
-                }
-                continue;
-            }
-            r = read(fd, reply + got, sizeof(reply) - got);
-            if (r <= 0) {
-                break;
-            }
-            got += (size_t)r;
+    for (i = 0; i < STREAM_N; i++) {
+        still_imu(&imu, i * (1000000u / IMU_HZ));
+        if (encode_imu(&imu, frame, sizeof(frame), &n) != 0 ||
+            send_all(fd, frame, n) != 0) {
+            fprintf(stderr, "send IMU failed at %u\n", i);
+            close(fd);
+            return -1;
         }
-        n = (ssize_t)got;
-    }
-    if (n > 0) {
-        fwrite(reply, 1, (size_t)n, stdout);
-        fputc('\n', stdout);
+        if (wait_nav(fd, &nav, 500) != 0) {
+            fprintf(stderr, "no NAV after IMU %u\n", i);
+            close(fd);
+            return -1;
+        }
+        last = nav;
+        if ((i % 50u) == 0u) {
+            printf("%u %.3f %.3f %.3f\n", (unsigned)nav.t_us,
+                   (double)nav.p_ned[0], (double)nav.p_ned[1],
+                   (double)nav.p_ned[2]);
+        }
+
+        /* First GNSS sets origin. Later fixes are 10 m north so p_n should
+         * walk toward ~10. */
+        if (i == 50u || i == 100u || i == 200u || i == 300u) {
+            memset(&gnss, 0, sizeof(gnss));
+            gnss.t_us = imu.t_us;
+            gnss.lat_deg = (i == 50u) ? LAT0 : lat_pull;
+            gnss.lon_deg = LON0;
+            gnss.alt_m = ALT0;
+            gnss.fix = 1;
+            if (encode_gnss(&gnss, frame, sizeof(frame), &n) != 0 ||
+                send_all(fd, frame, n) != 0) {
+                fprintf(stderr, "send GNSS failed\n");
+                close(fd);
+                return -1;
+            }
+        }
     }
 
+    printf("# last p_n=%.3f m (GNSS pull toward ~10 after origin fix)\n",
+           (double)last.p_ned[0]);
     close(fd);
     return 0;
 }
 
 int main(int argc, char **argv)
 {
-    uint8_t imu_frame[64];
-    uint8_t gnss_frame[64];
-    size_t imu_n;
-    size_t gnss_n;
     const char *host = "127.0.0.1";
     uint16_t port = 1234;
     int use_tcp = 0;
@@ -212,23 +268,12 @@ int main(int argc, char **argv)
         }
     }
 
-    if (encode_demo_frames(imu_frame, sizeof(imu_frame), &imu_n,
-                           gnss_frame, sizeof(gnss_frame), &gnss_n) != 0) {
-        fprintf(stderr, "encode failed\n");
+    if (local_self_test() != 0) {
         return 1;
     }
-
-    if (local_self_test(imu_frame, imu_n, gnss_frame, gnss_n) != 0) {
-        return 1;
-    }
-
     if (!use_tcp) {
         return 0;
     }
-
-    printf("sending IMU+GNSS to %s:%u\n", host, (unsigned)port);
-    if (tcp_send(host, port, imu_frame, imu_n, gnss_frame, gnss_n) != 0) {
-        return 1;
-    }
-    return 0;
+    printf("streaming still IMU + GNSS to %s:%u\n", host, (unsigned)port);
+    return tcp_stream(host, port) != 0 ? 1 : 0;
 }

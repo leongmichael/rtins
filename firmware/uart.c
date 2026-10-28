@@ -13,6 +13,15 @@ void uart_putc(uint8_t c)
     UART0->DATA = c;
 }
 
+void uart_write(const uint8_t *buf, size_t n)
+{
+    size_t i;
+
+    for (i = 0; i < n; i++) {
+        uart_putc(buf[i]);
+    }
+}
+
 bool uart_try_getc(uint8_t *out)
 {
     if ((UART0->STATE & UART_STATE_RXFULL) == 0u) {

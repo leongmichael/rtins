@@ -94,12 +94,56 @@ static int test_gnss_pulls_north(void)
     return 0;
 }
 
+static int test_still_aided_bounded(void)
+{
+    ins_ekf_t e;
+    ins_imu_t imu;
+    ins_gnss_t gnss;
+    unsigned i;
+    float pnorm;
+
+    ins_ekf_init(&e);
+    ins_ekf_set_origin(&e, 37.4f, -122.1f, 0.0f);
+
+    memset(&gnss, 0, sizeof(gnss));
+    gnss.lat_deg = 37.4f;
+    gnss.lon_deg = -122.1f;
+    gnss.alt_m = 0.0f;
+    gnss.fix = 1;
+
+    for (i = 0; i < 501u; i++) {
+        still_imu(&imu, i * 10000u);
+        ins_ekf_imu(&e, &imu);
+        if (i > 0u && (i % 100u) == 0u) {
+            gnss.t_us = imu.t_us;
+            ins_ekf_gnss(&e, &gnss);
+        }
+    }
+
+    pnorm = sqrtf(e.mech.p_ned[0] * e.mech.p_ned[0]
+                  + e.mech.p_ned[1] * e.mech.p_ned[1]
+                  + e.mech.p_ned[2] * e.mech.p_ned[2]);
+    printf("aided  |p|=%.3e P_nn=%.3f (5 s still + 1 Hz GNSS)\n",
+           (double)pnorm, (double)e.P[6][6]);
+
+    if (pnorm > 1.0f) {
+        return fail("aided still run diverged in position");
+    }
+    if (e.P[6][6] > 25.0f) {
+        return fail("aided P_nn grew past the frozen init");
+    }
+    return 0;
+}
+
 int main(void)
 {
     if (test_open_loop_grows_p() != 0) {
         return 1;
     }
     if (test_gnss_pulls_north() != 0) {
+        return 1;
+    }
+    if (test_still_aided_bounded() != 0) {
         return 1;
     }
     puts("test_ekf: ok");

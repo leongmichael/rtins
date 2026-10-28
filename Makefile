@@ -30,7 +30,7 @@ build/firmware.elf: $(FW_SRCS) firmware/linker.ld | build
 host: build/replay build/test_mech build/test_ekf
 
 build/replay: host/replay.c common/src/ins_packet.c | build
-	$(CC) $(HOST_CFLAGS) -o $@ host/replay.c common/src/ins_packet.c
+	$(CC) $(HOST_CFLAGS) -o $@ host/replay.c common/src/ins_packet.c $(HOST_LDLIBS)
 
 build/test_mech: host/test_mech.c $(COMMON_SRCS) | build
 	$(CC) $(HOST_CFLAGS) -o $@ host/test_mech.c $(COMMON_SRCS) $(HOST_LDLIBS)

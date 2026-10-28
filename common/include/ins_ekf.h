@@ -17,11 +17,14 @@
 
 #define INS_EKF_N 15
 
+/* Frozen v1 process/measurement noise (still IMU + 1 Hz GNSS stays bounded).
+ * Gyro/accel: white-noise spectral density used as σ² Δt on the matching
+ * P diagonal. GNSS: 2 m 1-σ position, R = 4 m². */
 #define INS_EKF_SIGMA_G   1.0e-3f
 #define INS_EKF_SIGMA_A   5.0e-2f
 #define INS_EKF_SIGMA_BG  1.0e-5f
 #define INS_EKF_SIGMA_BA  1.0e-4f
-#define INS_EKF_R_POS     4.0f /* m^2, diagonal */
+#define INS_EKF_R_POS     4.0f
 
 typedef struct {
     ins_mech_t mech;
