@@ -22,6 +22,9 @@ typedef struct {
 } ins_mech_t;
 
 void ins_mech_init(ins_mech_t *m);
-void ins_mech_imu(ins_mech_t *m, const ins_imu_t *imu);
+
+/* Integrates one IMU sample. Returns dt in seconds, or 0 if skipped
+ * (first sample, bad dt, or null args). */
+float ins_mech_imu(ins_mech_t *m, const ins_imu_t *imu);
 
 #endif /* INS_MECH_H */

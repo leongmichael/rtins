@@ -9,13 +9,14 @@ HOST_LDLIBS := -lm
 
 COMMON_SRCS := common/src/ins_packet.c common/src/ins_math.c \
                common/src/ins_mech.c
+EKF_SRCS := $(COMMON_SRCS) common/src/ins_ekf.c
 
 FW_SRCS := firmware/startup.c firmware/main.c firmware/uart.c \
            $(COMMON_SRCS)
 
-.PHONY: all firmware host clean qemu qemu-tcp replay-local test-mech
+.PHONY: all firmware host clean qemu qemu-tcp replay-local test-mech test-ekf
 
-all: firmware host test-mech
+all: firmware host test-mech test-ekf
 
 build:
 	mkdir -p build
@@ -26,7 +27,7 @@ build/firmware.elf: $(FW_SRCS) firmware/linker.ld | build
 	$(CC_FW) $(FW_CFLAGS) -T firmware/linker.ld -Wl,-Map=build/firmware.map \
 	  -o $@ $(FW_SRCS)
 
-host: build/replay build/test_mech
+host: build/replay build/test_mech build/test_ekf
 
 build/replay: host/replay.c common/src/ins_packet.c | build
 	$(CC) $(HOST_CFLAGS) -o $@ host/replay.c common/src/ins_packet.c
@@ -39,6 +40,12 @@ replay-local: build/replay
 
 test-mech: build/test_mech
 	./build/test_mech
+
+build/test_ekf: host/test_ekf.c $(EKF_SRCS) | build
+	$(CC) $(HOST_CFLAGS) -o $@ host/test_ekf.c $(EKF_SRCS) $(HOST_LDLIBS)
+
+test-ekf: build/test_ekf
+	./build/test_ekf
 
 # -nographic already muxes the monitor onto stdio, so -serial stdio
 # fails with "cannot use stdio by multiple character devices".
