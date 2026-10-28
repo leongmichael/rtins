@@ -7,8 +7,9 @@
  *   0x21000000 16 MiB   PSRAM        (unused for now)
  *   0x40004000          CMSDK UART0
  *
- * SECTIONS comes after startup is written. Do not add heap here.
  */
+
+ENTRY(Reset_Handler)
 
 MEMORY
 {
@@ -36,7 +37,7 @@ SECTIONS
 
     _sidata = LOADADDR(.data);
 
-    .bss : {
+    .bss : ALIGN(4) {
         _sbss = .;
         *(.bss*)
         *(COMMON)

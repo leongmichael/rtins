@@ -2,9 +2,10 @@
 #define FIRMWARE_UART_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 /*
- * CMSDK APB UART0 on MPS2 AN386. Register map only — no driver yet.
+ * CMSDK APB UART0 on MPS2 AN386.
  * Base from QEMU/AN386: 0x40004000
  *
  * Offsets (ARM CMSDK UART):
@@ -33,7 +34,15 @@ typedef struct {
 #define UART_CTRL_TX_EN (1u << 0)
 #define UART_CTRL_RX_EN (1u << 1)
 
+/* QEMU MPS2 SYSCLK is 25 MHz. Divisor is ignored for the char backend
+ * but must be non-zero for a well-formed CMSDK UART. */
+#define UART_PCLK_HZ 25000000u
+#define UART_BAUD    115200u
+
 void uart_init(void);
 void uart_putc(uint8_t c);
+
+/* Returns true and writes *out if a byte is waiting. */
+bool uart_try_getc(uint8_t *out);
 
 #endif /* FIRMWARE_UART_H */
