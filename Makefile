@@ -12,7 +12,7 @@ COMMON_SRCS := common/src/ins_packet.c common/src/ins_math.c \
 EKF_SRCS := $(COMMON_SRCS) common/src/ins_ekf.c
 
 FW_SRCS := firmware/startup.c firmware/main.c firmware/uart.c \
-           $(COMMON_SRCS)
+           $(EKF_SRCS)
 
 .PHONY: all firmware host clean qemu qemu-tcp replay-local test-mech test-ekf
 

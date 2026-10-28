@@ -7,6 +7,13 @@
 #define N INS_EKF_N
 #define RE_M 6378137.0f
 
+/* Single-threaded scratch — 15×15 must not live on a Cortex-M stack. */
+static float s_F[N][N];
+static float s_Phi[N][N];
+static float s_tmp[N][N];
+static float s_Pp[N][N];
+static float s_IKH[N][N];
+
 static void mat_zero(float a[N][N])
 {
     int i, j;
@@ -188,17 +195,16 @@ void ins_ekf_imu(ins_ekf_t *e, const ins_imu_t *imu)
     ins_imu_t u;
     float dt;
     float C[3][3], fn[3], Sk[3][3];
-    float F[N][N], Phi[N][N], tmp[N][N], Pp[N][N];
     int i, j;
 
     if (e == NULL || imu == NULL) {
         return;
     }
 
-    u = *imu;
+    u.t_us = imu->t_us;
     for (i = 0; i < 3; i++) {
-        u.gyr_rads[i] -= e->bg[i];
-        u.acc_mps2[i] -= e->ba[i];
+        u.gyr_rads[i] = imu->gyr_rads[i] - e->bg[i];
+        u.acc_mps2[i] = imu->acc_mps2[i] - e->ba[i];
     }
 
     dt = ins_mech_imu(&e->mech, &u);
@@ -215,35 +221,35 @@ void ins_ekf_imu(ins_ekf_t *e, const ins_imu_t *imu)
     skew3(fn, Sk);
 
     /* F: ψ̇ = -C b_g, δv̇ = [f^n×] ψ - C b_a, δṗ = δv */
-    mat_zero(F);
+    mat_zero(s_F);
     for (i = 0; i < 3; i++) {
         for (j = 0; j < 3; j++) {
-            F[i][9 + j] = -C[i][j];
-            F[3 + i][j] = Sk[i][j];
-            F[3 + i][12 + j] = -C[i][j];
+            s_F[i][9 + j] = -C[i][j];
+            s_F[3 + i][j] = Sk[i][j];
+            s_F[3 + i][12 + j] = -C[i][j];
         }
-        F[6 + i][3 + i] = 1.0f;
+        s_F[6 + i][3 + i] = 1.0f;
     }
 
-    mat_ident(Phi);
+    mat_ident(s_Phi);
     for (i = 0; i < N; i++) {
         for (j = 0; j < N; j++) {
-            Phi[i][j] += F[i][j] * dt;
+            s_Phi[i][j] += s_F[i][j] * dt;
         }
     }
 
-    mat_mul(Phi, e->P, tmp);
-    mat_mul_bt(tmp, Phi, Pp);
+    mat_mul(s_Phi, e->P, s_tmp);
+    mat_mul_bt(s_tmp, s_Phi, s_Pp);
     for (i = 0; i < 3; i++) {
-        Pp[i][i] += INS_EKF_SIGMA_G * INS_EKF_SIGMA_G * dt;
-        Pp[3 + i][3 + i] += INS_EKF_SIGMA_A * INS_EKF_SIGMA_A * dt;
-        Pp[9 + i][9 + i] += INS_EKF_SIGMA_BG * INS_EKF_SIGMA_BG * dt;
-        Pp[12 + i][12 + i] += INS_EKF_SIGMA_BA * INS_EKF_SIGMA_BA * dt;
+        s_Pp[i][i] += INS_EKF_SIGMA_G * INS_EKF_SIGMA_G * dt;
+        s_Pp[3 + i][3 + i] += INS_EKF_SIGMA_A * INS_EKF_SIGMA_A * dt;
+        s_Pp[9 + i][9 + i] += INS_EKF_SIGMA_BG * INS_EKF_SIGMA_BG * dt;
+        s_Pp[12 + i][12 + i] += INS_EKF_SIGMA_BA * INS_EKF_SIGMA_BA * dt;
     }
-    mat_symmetrize(Pp);
+    mat_symmetrize(s_Pp);
     for (i = 0; i < N; i++) {
         for (j = 0; j < N; j++) {
-            e->P[i][j] = Pp[i][j];
+            e->P[i][j] = s_Pp[i][j];
         }
     }
 }
@@ -253,7 +259,6 @@ void ins_ekf_gnss(ins_ekf_t *e, const ins_gnss_t *gnss)
     float z_ned[3], y[3];
     float S[3][3], Sinv[3][3];
     float K[N][3], x[N];
-    float IKH[N][N], tmp[N][N], Pp[N][N];
     int i, j, k;
 
     if (e == NULL || gnss == NULL || gnss->fix == 0u) {
@@ -296,28 +301,28 @@ void ins_ekf_gnss(ins_ekf_t *e, const ins_gnss_t *gnss)
         x[i] = K[i][0] * y[0] + K[i][1] * y[1] + K[i][2] * y[2];
     }
 
-    mat_ident(IKH);
+    mat_ident(s_IKH);
     for (i = 0; i < N; i++) {
         for (j = 0; j < 3; j++) {
-            IKH[i][6 + j] -= K[i][j];
+            s_IKH[i][6 + j] -= K[i][j];
         }
     }
 
-    mat_mul(IKH, e->P, tmp);
-    mat_mul_bt(tmp, IKH, Pp);
+    mat_mul(s_IKH, e->P, s_tmp);
+    mat_mul_bt(s_tmp, s_IKH, s_Pp);
     for (i = 0; i < N; i++) {
         for (j = 0; j < N; j++) {
             float s = 0.0f;
             for (k = 0; k < 3; k++) {
                 s += K[i][k] * INS_EKF_R_POS * K[j][k];
             }
-            Pp[i][j] += s;
+            s_Pp[i][j] += s;
         }
     }
-    mat_symmetrize(Pp);
+    mat_symmetrize(s_Pp);
     for (i = 0; i < N; i++) {
         for (j = 0; j < N; j++) {
-            e->P[i][j] = Pp[i][j];
+            e->P[i][j] = s_Pp[i][j];
         }
     }
 

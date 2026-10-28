@@ -26,6 +26,11 @@ void Reset_Handler(void)
         *dst++ = 0;
     }
 
+    /* CPACR: full access to CP10/CP11 so VFP instructions do not UsageFault. */
+    *(volatile uint32_t *)0xE000ED88u |= (0xFu << 20);
+    __asm volatile ("dsb");
+    __asm volatile ("isb");
+
     (void)main();
     for (;;) {
     }
